@@ -3,26 +3,10 @@
 
 #define SOCKNAME "./farm.sck"
 
-//globali per essere utilizzati nelle funzioni atexit
 int socketServer;
 int fdc;
 
 extern treeNodePtr_t albero;
-
-/* li ignoro con la maschera prima della fork
-//ignora tutti i segnali
-void ignoraSegnali(){
-	struct sigaction sa;
-	memset(&sa, 0, sizeof(sa));
-	sa.sa_handler = SIG_IGN;
-    CHECK_EQ(sigaction(SIGHUP,&sa, NULL), -1, "Sigaction SIGHUP: ")
-    CHECK_EQ(sigaction(SIGINT,&sa, NULL), -1, "Sigaction SIGINT: ")
-    CHECK_EQ(sigaction(SIGQUIT,&sa, NULL), -1, "Sigaction SIGQUIT: ")
-    CHECK_EQ(sigaction(SIGTERM,&sa, NULL), -1, "Sigaction SIGTERM: ")
-    CHECK_EQ(sigaction(SIGPIPE,&sa, NULL), -1, "Sigaction SIGPIPE: ")
-    CHECK_EQ(sigaction(SIGUSR1,&sa, NULL), -1, "Sigaction SIGUSR1: ")
-}
-*/
 
 //chiude collegamento tramite filedescriptor
 void chiudiSocketServer(){
@@ -39,8 +23,8 @@ void chiudiConnessione(){
     CLOSE(fdc, "Close socket connection: ")
 }
 
-//si occupa della socket dalla creazione alla connessione, 
-//aggiungendo in exit le funzioni necessarie alla chiusura dei fd e cancellazione del file
+//si occupa della socket lato server dalla creazione alla connessione, 
+//aggiungendo in exit le funzioni necessarie alla chiusura dei fd e cancellazione del file socket
 void creaSocketServer(){
     struct sockaddr_un sa;
 
@@ -60,69 +44,66 @@ void creaSocketServer(){
     ATEXIT(chiudiConnessione)
 }
 
+//legge i messaggi sulla socket e li aggiunge all'albero, riconoscendo i messaggi di terminazione e di stampa
 void leggi(){
 	int msgDim;
     long r = 0;
-    //char buffer[PATHNAME_MAX_DIM];
     char* buffer = NULL;
-    msg_t* nodino = NULL;
-
-    //msgDim = 10;
-    //fprintf(stderr, "lETTO msgDim %ld\n", msgDim);
-    //CHECK_NULL((buffer = malloc( msgDim)), "malloc buffer") //sizeof(char) *
-    //fprintf(stderr, "allocato  %ld in %s\n", msgDim, buffer);
-    //free(buffer);
+    msg_t* node = NULL;
 
     do{
-        CHECK_NULL((nodino = malloc(sizeof(msg_t))), "malloc nodino")
+        CHECK_NULL((node = malloc(sizeof(msg_t))), "malloc node")
 
-        CHECK_EQ((readn(fdc, &msgDim, sizeof(int))), -1, "readn1")
+        //lettura dimensione messaggio
+        if((readn(fdc, &msgDim, sizeof(int))) == -1){
+            free(node);
+            perror("readn1");
+            exit(EXIT_FAILURE);
+        }
         
-        if(msgDim > 0){
-            CHECK_NULL((buffer = malloc( msgDim)), "malloc buffer") //sizeof(char) *
-            CHECK_EQ((readn(fdc, buffer, msgDim)), -1, "readn2")
+        if(msgDim > 0){ //il messaggio indica la dimensione del messaggio ed esclude terminazione e stampa
             
-            CHECK_NULL((nodino->filePath = malloc(sizeof(char)*msgDim)), "malloc nodinoPath")
-            strncpy(nodino->filePath, buffer, msgDim);
+            if((buffer = malloc(msgDim)) == NULL){ //sizeof(char) * msgDim: char è un byte
+                free(node);
+                perror("malloc buffer");
+                exit(EXIT_FAILURE);
+            }
+
+            //lettura pathname file
+            if((readn(fdc, buffer, msgDim)) == -1){
+                free(node);
+                free(buffer);
+                perror("readn2");
+                exit(EXIT_FAILURE);
+            }
+            
+            if((node->filePath = malloc(sizeof(char)*msgDim)) == NULL){
+                free(node);
+                free(buffer);
+                perror("malloc nodePath");
+                exit(EXIT_FAILURE);
+            }
+            strncpy(node->filePath, buffer, msgDim);
             free(buffer);
             buffer = NULL;
 
-            //potrei gestire l'errore deallocando la malloc del nodino sopra
-            CHECK_EQ((readn(fdc, &r, sizeof(long))), -1, "readn3")
+            //lettura risultato long
+            if((readn(fdc, &r, sizeof(long))) == -1){
+                free(node->filePath);
+                free(node);
+                perror("readn3");
+                exit(EXIT_FAILURE);
+            }
             
-            nodino->result = r;
-            CHECK_EQ(inserisciNodo(nodino), -1, "inserisciNodo")
-
-            //fprintf(stderr, "%d\t%s\t%ld\n", msgDim, buffer, r);
+            node->result = r;
+            CHECK_EQ(inserisciNodo(node), -1, "inserisciNodo")
         }
         else{
-            if(msgDim == -2){
+            if(msgDim == -2){ //-2: messaggio di stampa
+                free(node);
                 stampaAlbero(albero);
             }
         }
-    }while(msgDim != -1);
-    free(nodino);
+    }while(msgDim != -1); //-1: messaggio di terminazione
+    free(node);
 }
-
-/*
-int main(int argc, char* argv[]){
-    ignoraSegnali();
-
-    creaSocketServer();
-
-    ATEXIT(dealloca)
-    
-    msg_t* messaggio = NULL;
-    int pathDim = 0;
-    char* buffer = NULL;
-    
-    //riceve messaggi
-
-    //while(nameDim > 0)
-
-    stampaAlbero();
-    //dealloca già tramite atexit
-
-    return 0;
-}
-*/

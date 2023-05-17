@@ -16,7 +16,6 @@
 
 #define SOCKNAME "./farm.sck"
 
-
 void chiudiSocketServer();
 void cancellaFileSocket();
 void chiudiConnessione();

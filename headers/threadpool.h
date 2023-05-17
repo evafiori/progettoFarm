@@ -13,13 +13,7 @@
 
 #include <myLibrary.h>
 
-/*
-typedef struct Node{
-    char* filePath;
-    int pathLen;
-}Node_t;
-*/
-
+//struct del threadpool
 typedef struct BQueue {
     char** queue;
     int   head;
@@ -33,8 +27,6 @@ typedef struct BQueue {
     pthread_t      * threads; // array di worker id
     int numthreads;           // numero di thread (size dell'array threads)
     int threadAttivi;         // numero di task attualmente in esecuzione 
-    //^non so se davvero mi interessa
-    //protocollo di uscita fuori dal threadpool perché di interesse anche del master
 } BQueue_t;
 
 char* pop(BQueue_t *q);
@@ -43,7 +35,6 @@ long risultato(char * p);
 
 void *worker_thread(void *threadpool);
 
-int freePoolResources(BQueue_t *pool);
 void destroyThreadPool();
 int createThreadPool(int num, int size, int del);
 

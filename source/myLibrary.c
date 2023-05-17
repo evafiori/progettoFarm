@@ -1,8 +1,6 @@
 
 #include <myLibrary.h>
 
-extern int socketServer;
-
 int nanosleep(const struct timespec *req, struct timespec *rem);
 
 //ritorna il valore intero oppure -1 con errno settato
@@ -98,6 +96,7 @@ int readn (int fd, void* buf, size_t n){
 	return 1;
 }
 
+//write safe alle interruzioni
 // -1 => errore, errno settato. 
 //  0 => okay
 int writen (int fd, void* buf, size_t n){
@@ -119,48 +118,14 @@ int writen (int fd, void* buf, size_t n){
    	return 0; //(n - nleft);
 }
 
-//AGGIUSTARE
-//write safe alle interruzioni
-/*ritorna 
-    -1: in caso di errore con errno settato
-    n byte scritti: terminazione precocce con errno settato
-                  EOF errno non è modificato
-    0: scritti tutti i byte richiesti
-    1: nessun byte scritto
-*/
-// -1 => errore, errno settato. 1 => nessun byte scritto. 0 => okay
-/*
-int writen (int fd, void* buf, size_t n){
-	size_t   nleft = n, nwrite;
-	char* bufbuf = (char*)buf;
-   	while (nleft > 0) {
-   		if((nwrite = write(fd, bufbuf, nleft)) == -1 && errno != EINTR) {
-	   		//if(nleft == n){
-				return -1;
-			//}
-			//else{
-			//	return n - nleft;
-			//}
-   		}
-   		//dovrei controllare se è == 0? per non serializzare il programma, perché questa chiamata verrà fatta in una mutex, quindi non prenderei il monopolio
-   		if(nwrite == 0 && nleft == n){ //controllo anche se avevo già scritto qualcosa perché in tal caso voglio arrivare alla fine della scrittura, altrimenti ritorno per non tenere troppo occupata la mutex
-   			return 1;
-   		}
-   		nleft -= nwrite;
-   		bufbuf   += nwrite;
-   	}
-   	return 0; //(n - nleft);
-}
-*/
-
+//ritorna 0 se la connessione va a buon fine e -1 altrimenti con errno settato
 int myConnect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
     struct timespec request;
     request.tv_nsec = 50000;
     request.tv_sec = 0;
-    int aspetta = 1;
+    int aspetta = 3; //provo ad eseguire la connect() 3 volte se la connessione viene rifiutata perché nessuno è in ascolto, 
+                    //dopo di che assumo che nessuno è in ascolto a causa di un errore sul collector e ritorno -1
 
-    //sleep(1); potrei dover aspettare la creazione del server per non avere problemi
-  
     while((errno = 0), (connect(sockfd, addr, addrlen)) < 0){
         /*
         Provo nuovamente la connect se:
@@ -168,15 +133,13 @@ int myConnect(int sockfd, const struct sockaddr *addr, socklen_t addrlen){
             - EAGAIN: la richiesta non può essere risolta immediatamente
             - EINTR: la chiamata è non bloccante e viene interrotta da un segnale
             - ECONNREFUSED: nessuno è in ascolto 
-                -> provo una seconda volta dopo aver atteso, altrimenti esco con fallimento
+                -> provo altre volte dopo aver atteso perché richiesta di connessione può arrivare prima che il master si metta in ascolto, altrimenti esco con fallimento
         */
-        //il socket non esiste OR la richiesta non può essere risolta subito OR la richiesta può essere interrotta da un segnale
-        if(errno == ENOENT || errno == EAGAIN || errno == EINTR || (errno == ECONNREFUSED && (aspetta--) == 1)){ 
-            nanosleep(&request, NULL);//aspetto un momentino
-            //non controllo il valore di ritorno perché non mi interessa se è stata interrotta, mi basta sia passato un pochino di tempo
+        if(errno == ENOENT || errno == EAGAIN || errno == EINTR || (errno == ECONNREFUSED && (aspetta--) > 0)){ 
+            nanosleep(&request, NULL);//aspetto un momento
+            //non controllo il valore di ritorno perché non mi interessa se è stata interrotta, mi basta sia passato un po' di tempo
         }
         else{
-            //printf("%d\n",errno);
             return -1;
         }
     }

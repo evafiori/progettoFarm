@@ -3,9 +3,9 @@ CC			=  gcc
 CFLAGS	    += -lpthread -std=c99 -Wall -pedantic -g
 INCLUDEDIR	= -I ./headers
 
-TARGETS		= farm generafile clean 
+TARGETS		= farm generafile
 
-.PHONY: all clean test reset
+.PHONY: all clean test
 .SUFFIXES: .c .h
 
 %.o: %.c
@@ -13,9 +13,7 @@ TARGETS		= farm generafile clean
 
 all: $(TARGETS)
 
-reset: 		cleanExe clean
-
-test: 		generafile farm
+test: 	generafile farm
 	./test.sh
 
 generafile: ./source/generafile.c
@@ -42,10 +40,10 @@ farm: ./source/main.o ./source/myLibrary.o ./source/master.o  ./source/threadpoo
 clean:
 	\rm -f *.dat
 	\rm -f *.txt
-	\rm -r testdir
+	\rm -f -r testdir
 	\rm -f generafile
 	\rm -f farm
-	\rm -f ./src/*.o
+	\rm -f ./source/*.o
 	\rm -f ./farm.sck
 	
 	

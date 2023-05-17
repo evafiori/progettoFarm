@@ -3,19 +3,6 @@
 
 treeNodePtr_t albero = NULL;
 
-/*
-typedef struct messaggio{
-    long result;
-    char* filePath;
-}msg_t;
-
-typedef struct nodo{
-    struct nodo* sx;
-    struct nodo* dx;
-    msg_t* msg;
-}treeNode_t;
-*/
-
 //restituisce 1 se tutto okay, -1 altrimenti con errno settato
 int inserisciNodo (msg_t* temp){
     if(temp == NULL){
@@ -61,7 +48,7 @@ int inserisciNodo (msg_t* temp){
 
 //stampa tutto l'albero in maniera ordinata e già formattata
 void stampaAlbero(treeNodePtr_t scorri){
-    //treeNodePtr_t scorri = albero;
+    
     if(scorri != NULL){
         stampaAlbero(scorri->sx);
         printf("%ld\t%s\n", scorri->msg->result, scorri->msg->filePath);
@@ -69,7 +56,7 @@ void stampaAlbero(treeNodePtr_t scorri){
     }
 }
 
-//dealloca l'intero albero
+//dealloca l'intero albero, grazie a chiamate ricorsive su entrambi i rami
 void deallocaAlbero(treeNodePtr_t* a){
     if(*a != NULL){
         deallocaAlbero(&((*a)->sx));
@@ -80,6 +67,7 @@ void deallocaAlbero(treeNodePtr_t* a){
     }
 }
 
+//è la funzione senza parametri chiamata in atexit, chiama a sua volta la funzione deallocaAlbero sopra
 void dealloca(){
     deallocaAlbero(&albero);
 }

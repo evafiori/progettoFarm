@@ -1,15 +1,19 @@
 
 #include <threadpool.h>
 
+//flag dichiarati in master.c
 extern int terminaCodaFlag;
 extern int stampaFlag;
 
+//struct contenente le informazioni utili ai thread e alla comunicazione tra thread e master, tra cui la più importante: la coda
 BQueue_t *pool = NULL;
 
+//in master.c
 extern int socketClient;
 extern pthread_mutex_t mtxSocket;
 
 //pop: la chiamata deve avvenire in possesso della LOCK
+//estrae un elemento dalla coda concorrente
 char* pop(BQueue_t *q){
     if(q == NULL){
         errno = EINVAL;
@@ -23,6 +27,8 @@ char* pop(BQueue_t *q){
     return data;
 }
 
+//inserisce un elemento in coda concorrente, si occupa dell'acquisizione della lock
+//ritorna 0 oppure -1 in caso di errore con errno settato
 int push(BQueue_t *q, char* data){
     if (q == NULL || data == NULL) {
         errno = EINVAL;
@@ -44,6 +50,8 @@ int push(BQueue_t *q, char* data){
     return 0;
 }
 
+//calcola la sommatoria richiesta sul file il cui pathname è passato come paramentro
+//ritorna il risultato oppure -1 con errno settato
 long risultato(char * p){
     FILE * fileInput = NULL;
     long sum = 0, i = 0, x;
@@ -61,7 +69,7 @@ long risultato(char * p){
     }
 
     if(ferror(fileInput)){
-        //fprintf(stderr, "Lettura terminata a causa di un errore.\n");
+        //lettura terminata a causa di un errore
         errno = EIO;
         fclose(fileInput);
         return -1;
@@ -89,7 +97,7 @@ void *worker_thread(void *threadpool) {
 
         if (terminaCodaFlag == 1 && pool->qlen == 0) {
             // devo uscire e non ci sono task in coda
-            //è stata fatta una broadcast dal master (o dal signal handler)
+            // l'ultimo thread in vita manda il messaggio di terminazione
             if(pool->threadAttivi == 1){
                 msgDim = -1;
                 LOCK(mtxSocket)
@@ -104,6 +112,7 @@ void *worker_thread(void *threadpool) {
             return NULL; //pthread exit
         }
         
+        //messaggio di stampa
         if(stampaFlag == 1){
             UNLOCK(pool->m)
 
@@ -134,9 +143,7 @@ void *worker_thread(void *threadpool) {
             LOCK(mtxSocket)
 
             CHECK_EQ((w = writen(socketClient, &msgDim, sizeof(int))), -1, "writen msgDim")
-            
             CHECK_EQ((w = writen(socketClient, path, msgDim)), -1, "writen path")
-            
             CHECK_EQ((w = writen(socketClient, &ris, sizeof(long))), -1, "writen long")
             
             UNLOCK(mtxSocket)
@@ -152,16 +159,14 @@ void *worker_thread(void *threadpool) {
     return NULL;
 }
 
-
-//ritorna -1 con errno settato in caso di errore
-//0 se tutto okay
-int freePoolResources(BQueue_t *pool) {
-    if(pool == NULL){
+//chiamata in atexit per deallocare la memoria legata al pool dei thread
+//libera tutte la risorse dello struct del threadpool
+void destroyThreadPool() {    
+    if(pool == NULL) {
         errno = EINVAL;
-	    return -1;
+        perror("destryThreadPool");
+        return ;
     }
-
-    int returnResult = 0;
 
     if(pool->threads) {
         free(pool->threads);
@@ -177,69 +182,16 @@ int freePoolResources(BQueue_t *pool) {
     }
 	
     if((errno = pthread_mutex_destroy(&(pool->m))) != 0){
-        perror("destroy mutex");
-        returnResult = -1;
+        perror("destroy mutex");        
     }
     if((errno = pthread_cond_destroy(&(pool->cfull))) != 0){
-        perror("destroy cond cfull");
-        returnResult = -1;
+        perror("destroy cond cfull"); 
     }
     if((errno = pthread_cond_destroy(&(pool->cempty))) != 0){
-        perror("destroy cond cempty");
-        returnResult = -1;
+        perror("destroy cond cempty");       
     }
 
-    free(pool);    
-    if(returnResult == -1){
-        errno = EINVAL;
-        return -1;
-    }
-    return 0;
-}
-
-// fa terminare i thread e li joina
-// la chiamo quando 
-    // ho un fallimento durante il lancio dei thread
-    // arriva un segnale di terminazione
-    // finisco i messaggi da mettere in coda 
-//ritorna -1 in caso di errore con errno settato
-void destroyThreadPool() {    
-    if(pool == NULL) {
-        errno = EINVAL;
-        perror("destryThreadPool");
-        return ;
-    }
-
-    /*la faccio nel master
-    LOCK(pool->m)
-
-    //c è la cond sui cui mi restano in attesa i worker (thread)
-    if (pthread_cond_broadcast(&(pool->cempty)) != 0) { 
-      UNLOCK(pool->m);
-      errno = EFAULT;
-      perror("destryThreadPool");
-      return;
-    }
-
-    UNLOCK(pool->m)
-    */
-    //la lock mi serve solo per accedere alla condition variable
-    
-    /*lo faccio nel master, ma se ho una exit devo gestirlo
-    for(int i = 0; i < pool->numthreads; i++) {
-        if (pthread_join(pool->threads[i], NULL) != 0) {
-            errno = EFAULT;
-            perror("destryThreadPool");
-            return;
-        }
-        fprintf(stderr, "joinato thread %d\n", i);
-    }
-    */
-
-    if(freePoolResources(pool) == -1){
-        perror("freePoolResources");
-    }
-    
+    free(pool);
 }
 
 int createThreadPool(int num, int size, int del) {
@@ -262,7 +214,7 @@ int createThreadPool(int num, int size, int del) {
     pool->delay.tv_sec = del / 1000;
     pool->delay.tv_nsec = (del % 1000) * 1000000;
 
-    /* Allocate thread and task queue */
+    //allocazione dinamica dell'array dei thread e della coda
     pool->threads = (pthread_t *)malloc(sizeof(pthread_t) * num);
     if (pool->threads == NULL) {
         //error: ENOMEM
@@ -277,6 +229,7 @@ int createThreadPool(int num, int size, int del) {
         return -1;
     }
     
+    //inizializzazione
     for(int i = 0; i < pool->qsize; i++){
         pool->queue[i] = NULL;
     }
@@ -309,6 +262,7 @@ int createThreadPool(int num, int size, int del) {
         return -1;
     }
     
+    //creazione thread
     for(int i = 0; i < num; i++) {
         if((errno = pthread_create(&(pool->threads[i]), NULL, worker_thread, (void*)pool)) != 0) {
 	    /* errore fatale, libero tutto forzando l'uscita dei threads */
